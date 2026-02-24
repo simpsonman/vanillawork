@@ -10,10 +10,12 @@ definePageMeta({
   layout: false,
 })
 
+const user = useSupabaseUser()
 const router = useRouter()
 
-onMounted(async () => {
-  // Supabase Auth 콜백 처리 후 회사 선택 페이지로 이동
-  await router.push('/select-company')
-})
+watch(user, (currentUser) => {
+  if (currentUser) {
+    router.push('/select-company')
+  }
+}, { immediate: true })
 </script>
