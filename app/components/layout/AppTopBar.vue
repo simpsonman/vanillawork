@@ -90,5 +90,5 @@ const { user, logout } = useAuth()
 const companyStore = useCompanyStore()
 
 const currentCompany = computed(() => companyStore.currentCompany)
-const currentRole = computed(() => companyStore.currentMembership?.role)
+const currentRole = computed(() => companyStore.membership?.role)
 </script>

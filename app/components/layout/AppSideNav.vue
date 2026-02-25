@@ -55,7 +55,7 @@ import {
 
 const companyStore = useCompanyStore()
 const currentCompanyId = computed(() => companyStore.currentCompanyId)
-const role = computed(() => companyStore.currentMembership?.role)
+const role = computed(() => companyStore.membership?.role)
 
 const ALL_LINKS = computed<any[]>(() => {
   const cid = currentCompanyId.value
