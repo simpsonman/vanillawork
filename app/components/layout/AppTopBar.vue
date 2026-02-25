@@ -1,5 +1,5 @@
 <template>
-  <header class="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+  <header class="h-full w-full bg-transparent">
     <!-- Header inner container -->
     <div class="flex h-14 items-center justify-between px-4 sm:px-6 w-full">
       <!-- Left: Brand / Company Switcher -->

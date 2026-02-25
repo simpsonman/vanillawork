@@ -41,11 +41,90 @@ definePageMeta({
 })
 
 const { company } = useCompany()
+const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 
-const summaryCards = [
-  { title: '잔여 연차', value: '--', unit: '일', icon: Calendar },
-  { title: '이번 달 근무일', value: '--', unit: '일', icon: Settings },
-  { title: '대기 중 신청', value: '--', unit: '건', icon: FilePlus },
-  { title: '추가근무', value: '--', unit: 'h', icon: Clock },
-]
+// State for dashboard metrics
+const remainingLeave = ref('--')
+const workingDays = ref('--')
+const pendingRequests = ref('--')
+const overtimeHours = ref('--')
+
+async function fetchDashboardMetrics() {
+  if (!user.value?.id || !company?.value?.id) return
+
+  try {
+    const companyId = company.value.id
+    const userId = user.value.id
+
+    // 1. 잔여 연차 (합계: ACCRUAL, ADJUST 등 모두 포함)
+    const { data: ledgerData } = await supabase
+      .from('leave_ledger')
+      .select('amount')
+      .eq('company_id', companyId)
+      .eq('user_id', userId)
+
+    if (ledgerData && ledgerData.length > 0) {
+      const sum = (ledgerData as any[]).reduce((acc, row) => acc + Number(row.amount || 0), 0)
+      remainingLeave.value = sum.toString()
+    } else {
+      remainingLeave.value = '0'
+    }
+
+    // 2. 이번 달 근무일
+    // 이번달의 정상 출근/조기퇴근 등 일수를 센다고 가정 
+    // MVP이므로 임시로 근무 기록수 확인 (worked_minutes > 0)
+    const startOfMonth = new Date()
+    startOfMonth.setDate(1)
+    
+    const { count: workingDaysCount } = await supabase
+      .from('attendance_daily')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('user_id', userId)
+      .gte('date', startOfMonth.toISOString().split('T')[0])
+      .gt('worked_minutes', 0)
+    
+    workingDays.value = workingDaysCount !== null ? workingDaysCount.toString() : '0'
+
+    // 3. 대기 중 신청 건수
+    const { count: pendingCount } = await supabase
+      .from('leave_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('user_id', userId)
+      .eq('status', 'PENDING')
+      
+    pendingRequests.value = pendingCount !== null ? pendingCount.toString() : '0'
+
+    // 4. 추가근무 (이번 달 승인된 OT 총 시간)
+    const { data: otData } = await supabase
+      .from('overtime_requests')
+      .select('minutes')
+      .eq('company_id', companyId)
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .gte('start_at', startOfMonth.toISOString())
+      
+    if (otData && otData.length > 0) {
+      const totalMinutes = (otData as any[]).reduce((acc, row) => acc + Number(row.minutes || 0), 0)
+      overtimeHours.value = (Math.round((totalMinutes / 60) * 10) / 10).toString()
+    } else {
+      overtimeHours.value = '0'
+    }
+  } catch (error) {
+    console.error('Failed to fetch dashboard metrics:', error)
+  }
+}
+
+onMounted(() => {
+  fetchDashboardMetrics()
+})
+
+const summaryCards = computed(() => [
+  { title: '잔여 연차', value: remainingLeave.value, unit: '일', icon: Calendar },
+  { title: '이번 달 근무일', value: workingDays.value, unit: '일', icon: Settings },
+  { title: '대기 중 신청', value: pendingRequests.value, unit: '건', icon: FilePlus },
+  { title: '추가근무', value: overtimeHours.value, unit: 'h', icon: Clock },
+])
 </script>
