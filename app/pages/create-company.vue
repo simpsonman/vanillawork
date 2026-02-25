@@ -69,6 +69,11 @@
             </span>
           </Button>
         </div>
+        
+        <div v-if="errorMsg" class="mt-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 flex items-start gap-3 text-red-600 dark:text-red-400">
+          <AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
+          <div class="text-sm">{{ errorMsg }}</div>
+        </div>
       </div>
     </Card>
   </div>
@@ -77,6 +82,7 @@
 <script setup lang="ts">
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { AlertCircle } from 'lucide-vue-next'
 
 definePageMeta({
   middleware: ['auth'],
@@ -89,15 +95,17 @@ const router = useRouter()
 const name = ref('')
 const timezone = ref('Asia/Seoul')
 const loading = ref(false)
+const errorMsg = ref('')
 
 async function handleCreate() {
   if (!name.value.trim() || loading.value) return
   
+  errorMsg.value = ''
   loading.value = true
   try {
     const { data: newCompany, error } = await companyStore.createCompany(name.value.trim(), timezone.value)
     if (error) {
-      alert('회사 생성 중 오류가 발생했습니다: ' + error.message)
+      errorMsg.value = '회사 생성 중 오류가 발생했습니다: ' + error.message
       return
     }
     

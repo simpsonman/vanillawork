@@ -44,6 +44,26 @@ export const useCompanyStore = defineStore('company', () => {
         }
     }
 
+    /** 새 회사/워크스페이스 생성 */
+    async function createCompany(name: string, timezone: string) {
+        if (!user.value) return { data: null, error: new Error('User not authenticated') }
+
+        // rpc를 호출하여 회사 생성과 OWNER 편입을 트랜잭션으로 안전하게 처리
+        const { data: company, error } = await supabase
+            .rpc('create_company_with_owner' as any, {
+                p_name: name,
+                p_timezone: timezone
+            } as any)
+
+        if (error) return { data: null, error }
+
+        await selectCompany((company as any).id)
+
+        // 3. Update local state
+        companies.value.push(company as Company)
+        return { data: company as Company, error: null }
+    }
+
     /** 회사 선택 & 멤버십 로드 */
     async function selectCompany(companyId: string) {
         if (!user.value) return
@@ -78,6 +98,7 @@ export const useCompanyStore = defineStore('company', () => {
         isManager,
         loading,
         fetchCompanies,
+        createCompany,
         selectCompany,
         $reset,
     }
