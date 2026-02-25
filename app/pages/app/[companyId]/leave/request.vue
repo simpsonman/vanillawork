@@ -140,13 +140,10 @@ const { company } = useCompany()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const router = useRouter()
+const route = useRoute()
 
-const loadingInit = ref(true)
 const loadingSubmit = ref(false)
 const errorMsg = ref('')
-
-const leaveTypes = ref<any[]>([])
-const remainingLeave = ref(0)
 
 const form = reactive({
   leave_type_id: '',
@@ -160,45 +157,53 @@ const isValid = computed(() => {
   return form.leave_type_id && form.start_at && form.end_at && form.amount > 0
 })
 
-async function fetchInitialData() {
-  if (!company?.value?.id || !user.value?.id) return
-  errorMsg.value = ''
-  
-  try {
-    const companyId = company.value.id
+const { data: initialData, pending: loadingInit, error: asyncError } = await useAsyncData(
+  `leave-request-${route.params.companyId}`,
+  async () => {
+    const companyId = route.params.companyId as string
+    const userId = user.value?.id
     
-    // 1. 활성화된 휴가 종류 가져오기
-    const { data: types, error: typeErr } = await supabase
-      .from('leave_types')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('is_active', true)
-      
-    if (typeErr) throw typeErr
-    leaveTypes.value = types || []
-
-    // 2. 내 잔여 연차 가져오기 (원장 합계)
-    const { data: ledgerData, error: ledgerErr } = await supabase
-      .from('leave_ledger')
-      .select('amount')
-      .eq('company_id', companyId)
-      .eq('user_id', user.value.id)
-
-    if (ledgerErr) throw ledgerErr
-
-    if (ledgerData && ledgerData.length > 0) {
-      remainingLeave.value = (ledgerData as any[]).reduce((acc, row) => acc + Number(row.amount || 0), 0)
+    // Auth might not be completely hydrated yet on first client render
+    if (!companyId || !userId) {
+      return null
     }
-  } catch (err: any) {
+    
+    const [typesRes, ledgerRes] = await Promise.all([
+      supabase.from('leave_types').select('*').eq('company_id', companyId).eq('is_active', true),
+      supabase.from('leave_ledger').select('amount').eq('company_id', companyId).eq('user_id', userId)
+    ])
+    
+    if (typesRes.error) throw typesRes.error
+    if (ledgerRes.error) throw ledgerRes.error
+    
+    const types = typesRes.data || []
+    const remaining = (ledgerRes.data || []).reduce((acc: number, row: any) => acc + Number(row.amount || 0), 0)
+    
+    return {
+      types,
+      remaining
+    }
+  },
+  {
+    server: false,
+    watch: [() => user.value?.id, () => route.params.companyId]
+  }
+)
+
+const leaveTypes = computed(() => (initialData.value?.types as any[]) || [])
+const remainingLeave = computed(() => initialData.value?.remaining || 0)
+
+// watch asyncError to update errorMsg
+watch(asyncError, (err) => {
+  if (err) {
     console.error('Initial data load error:', err)
     errorMsg.value = '데이터를 불러오는데 실패했습니다.'
-  } finally {
-    loadingInit.value = false
   }
-}
+}, { immediate: true })
 
 async function submitRequest() {
-  if (!isValid.value || loadingSubmit.value || !company?.value?.id || !user.value?.id) return
+  const companyId = route.params.companyId as string
+  if (!isValid.value || loadingSubmit.value || !companyId || !user.value?.id) return
   
   errorMsg.value = ''
   
@@ -215,7 +220,7 @@ async function submitRequest() {
     const { error } = await supabase
       .from('leave_requests')
       .insert({
-        company_id: company.value.id,
+        company_id: companyId,
         user_id: user.value.id,
         leave_type_id: form.leave_type_id,
         start_at: form.start_at,
@@ -228,7 +233,7 @@ async function submitRequest() {
     if (error) throw error
 
     // 성공 시 대시보드나 내 기록으로 이동
-    router.push(`/app/${company.value.id}/dashboard`)
+    router.push(`/app/${companyId}/dashboard`)
     
   } catch (err: any) {
     console.error('Submit error:', err)
@@ -237,8 +242,4 @@ async function submitRequest() {
     loadingSubmit.value = false
   }
 }
-
-onMounted(() => {
-  fetchInitialData()
-})
 </script>

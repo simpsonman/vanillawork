@@ -25,10 +25,18 @@
           </div>
         </div>
         <div class="relative z-10 mt-4 flex items-baseline gap-2">
-          <div class="text-3xl font-bold tracking-tight text-slate-800 dark:text-slate-100">{{ card.value }}</div>
-          <div class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ card.unit }}</div>
+          <div v-if="metricsLoading" class="h-8 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+          <template v-else>
+            <div class="text-3xl font-bold tracking-tight text-slate-800 dark:text-slate-100">{{ card.value }}</div>
+            <div class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ card.unit }}</div>
+          </template>
         </div>
       </div>
+    </div>
+
+    <!-- Debug: show error if any -->
+    <div v-if="metricsError" class="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 text-red-600 dark:text-red-400 text-sm">
+      {{ metricsError }}
     </div>
   </div>
 </template>
@@ -40,86 +48,56 @@ definePageMeta({
   middleware: ['auth', 'company'],
 })
 
+const route = useRoute()
 const { company } = useCompany()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-// State for dashboard metrics
-const remainingLeave = ref('--')
-const workingDays = ref('--')
-const pendingRequests = ref('--')
-const overtimeHours = ref('--')
-
-async function fetchDashboardMetrics() {
-  if (!user.value?.id || !company?.value?.id) return
-
-  try {
-    const companyId = company.value.id
-    const userId = user.value.id
-
-    // 1. 잔여 연차 (합계: ACCRUAL, ADJUST 등 모두 포함)
-    const { data: ledgerData } = await supabase
-      .from('leave_ledger')
-      .select('amount')
-      .eq('company_id', companyId)
-      .eq('user_id', userId)
-
-    if (ledgerData && ledgerData.length > 0) {
-      const sum = (ledgerData as any[]).reduce((acc, row) => acc + Number(row.amount || 0), 0)
-      remainingLeave.value = sum.toString()
-    } else {
-      remainingLeave.value = '0'
+const { data: metrics, pending: metricsLoading, error: asyncError } = await useAsyncData(
+  `dashboard-metrics-${route.params.companyId}`,
+  async () => {
+    const companyId = route.params.companyId as string
+    const userId = user.value?.id
+    
+    // Auth might not be completely hydrated yet on first client render
+    if (!companyId || !userId) {
+      return null
     }
 
-    // 2. 이번 달 근무일
-    // 이번달의 정상 출근/조기퇴근 등 일수를 센다고 가정 
-    // MVP이므로 임시로 근무 기록수 확인 (worked_minutes > 0)
     const startOfMonth = new Date()
     startOfMonth.setDate(1)
-    
-    const { count: workingDaysCount } = await supabase
-      .from('attendance_daily')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', companyId)
-      .eq('user_id', userId)
-      .gte('date', startOfMonth.toISOString().split('T')[0])
-      .gt('worked_minutes', 0)
-    
-    workingDays.value = workingDaysCount !== null ? workingDaysCount.toString() : '0'
+    startOfMonth.setHours(0, 0, 0, 0)
+    const dateStr = startOfMonth.toISOString().split('T')[0]
 
-    // 3. 대기 중 신청 건수
-    const { count: pendingCount } = await supabase
-      .from('leave_requests')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', companyId)
-      .eq('user_id', userId)
-      .eq('status', 'PENDING')
-      
-    pendingRequests.value = pendingCount !== null ? pendingCount.toString() : '0'
+    // Execute queries in parallel for better performance
+    const [ledger, attendance, leaves, overtime] = await Promise.all([
+      supabase.from('leave_ledger').select('amount').eq('company_id', companyId).eq('user_id', userId),
+      supabase.from('attendance_daily').select('*', { count: 'exact', head: true }).eq('company_id', companyId).eq('user_id', userId).gte('date', dateStr).gt('worked_minutes', 0),
+      supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('company_id', companyId).eq('user_id', userId).eq('status', 'PENDING'),
+      supabase.from('overtime_requests').select('minutes').eq('company_id', companyId).eq('user_id', userId).eq('status', 'APPROVED').gte('start_at', startOfMonth.toISOString())
+    ])
 
-    // 4. 추가근무 (이번 달 승인된 OT 총 시간)
-    const { data: otData } = await supabase
-      .from('overtime_requests')
-      .select('minutes')
-      .eq('company_id', companyId)
-      .eq('user_id', userId)
-      .eq('status', 'APPROVED')
-      .gte('start_at', startOfMonth.toISOString())
-      
-    if (otData && otData.length > 0) {
-      const totalMinutes = (otData as any[]).reduce((acc, row) => acc + Number(row.minutes || 0), 0)
-      overtimeHours.value = (Math.round((totalMinutes / 60) * 10) / 10).toString()
-    } else {
-      overtimeHours.value = '0'
+    const sum = (ledger.data || []).reduce((acc: number, row: any) => acc + Number(row.amount || 0), 0)
+    const totalMinutes = (overtime.data || []).reduce((acc: number, row: any) => acc + Number(row.minutes || 0), 0)
+
+    return {
+      remainingLeave: sum.toString(),
+      workingDays: (attendance.count || 0).toString(),
+      pendingRequests: (leaves.count || 0).toString(),
+      overtimeHours: (Math.round((totalMinutes / 60) * 10) / 10).toString()
     }
-  } catch (error) {
-    console.error('Failed to fetch dashboard metrics:', error)
+  },
+  {
+    server: false,
+    watch: [() => user.value?.id, () => route.params.companyId]
   }
-}
+)
 
-onMounted(() => {
-  fetchDashboardMetrics()
-})
+const remainingLeave = computed(() => metrics.value?.remainingLeave ?? '0')
+const workingDays = computed(() => metrics.value?.workingDays ?? '0')
+const pendingRequests = computed(() => metrics.value?.pendingRequests ?? '0')
+const overtimeHours = computed(() => metrics.value?.overtimeHours ?? '0')
+const metricsError = computed(() => asyncError.value ? `오류: ${asyncError.value.message}` : '')
 
 const summaryCards = computed(() => [
   { title: '잔여 연차', value: remainingLeave.value, unit: '일', icon: Calendar },
@@ -128,3 +106,4 @@ const summaryCards = computed(() => [
   { title: '추가근무', value: overtimeHours.value, unit: 'h', icon: Clock },
 ])
 </script>
+

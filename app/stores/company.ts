@@ -11,7 +11,7 @@ export const useCompanyStore = defineStore('company', () => {
 
     /** 현재 선택된 회사 */
     const currentCompany = computed(() =>
-        companies.value.find(c => c.id === currentCompanyId.value) ?? null,
+        companies.value.find((c: Company) => c.id === currentCompanyId.value) ?? null,
     )
 
     /** 현재 역할 */
@@ -85,13 +85,24 @@ export const useCompanyStore = defineStore('company', () => {
 
         const { data, error } = await supabase
             .from('company_memberships')
-            .select('*')
+            .select('*, companies(*)')
             .eq('company_id', companyId)
             .eq('user_id', user.id)
             .single()
 
         if (error) throw error
-        membership.value = data as CompanyMembership
+
+        // Extract membership data (excluding the joined companies object if we just want membership fields)
+        const { companies: joinedCompany, ...membershipData } = data as any
+        membership.value = membershipData as CompanyMembership
+
+        // Ensure the company is in the companies list so currentCompany works
+        if (joinedCompany) {
+            const existing = companies.value.find((c: Company) => c.id === joinedCompany.id)
+            if (!existing) {
+                companies.value.push(joinedCompany as Company)
+            }
+        }
     }
 
     /** 초기화 */
