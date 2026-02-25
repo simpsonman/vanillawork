@@ -29,6 +29,22 @@
               @keyup.enter="handleCreate"
             />
           </div>
+
+          <div class="space-y-2">
+            <label for="businessRegNo" class="text-sm font-medium text-slate-700 dark:text-slate-300">
+              사업자등록번호
+            </label>
+            <input
+              id="businessRegNo"
+              v-model="businessRegNo"
+              type="text"
+              class="w-full h-12 px-4 rounded-lg bg-white/60 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/50 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all shadow-sm placeholder:text-slate-400"
+              placeholder="예: 501-86-01336"
+              :disabled="loading"
+              @input="formatBusinessRegNo"
+              @keyup.enter="handleCreate"
+            />
+          </div>
           
           <div class="space-y-2">
             <label for="timezone" class="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -60,7 +76,7 @@
           <Button
             class="flex-[2] h-12 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all duration-300 rounded-lg font-medium text-base relative overflow-hidden group"
             @click="handleCreate"
-            :disabled="loading || !name.trim()"
+            :disabled="loading || !name.trim() || businessRegNo.length < 12"
           >
             <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
             <span class="relative flex items-center justify-center gap-2">
@@ -93,27 +109,56 @@ const companyStore = useCompanyStore()
 const router = useRouter()
 
 const name = ref('')
+const businessRegNo = ref('')
 const timezone = ref('Asia/Seoul')
 const loading = ref(false)
 const errorMsg = ref('')
 
+// 사업자등록번호 포맷팅 (000-00-00000)
+function formatBusinessRegNo(e: Event) {
+  const target = e.target as HTMLInputElement
+  let val = target.value.replace(/[^0-9]/g, '')
+  if (val.length > 10) {
+    val = val.slice(0, 10)
+  }
+  
+  if (val.length > 5) {
+    val = `${val.slice(0, 3)}-${val.slice(3, 5)}-${val.slice(5)}`
+  } else if (val.length > 3) {
+    val = `${val.slice(0, 3)}-${val.slice(3)}`
+  }
+  
+  businessRegNo.value = val
+}
+
 async function handleCreate() {
-  if (!name.value.trim() || loading.value) return
+  if (!name.value.trim() || businessRegNo.value.length < 12 || loading.value) return
   
   errorMsg.value = ''
   loading.value = true
   try {
-    const { data: newCompany, error } = await companyStore.createCompany(name.value.trim(), timezone.value)
+    const { data: newCompany, error } = await companyStore.createCompany(name.value.trim(), timezone.value, businessRegNo.value)
     if (error) {
-      errorMsg.value = '회사 생성 중 오류가 발생했습니다: ' + error.message
+      if (error.code === '23505' && error.message.includes('business_registration_number')) {
+         errorMsg.value = '이미 가입된 사업자등록번호입니다.'
+      } else {
+         errorMsg.value = '회사 생성 중 오류가 발생했습니다: ' + error.message
+      }
       return
     }
     
     // 회사 생성이 완료되면 해당 회사 대시보드로 즉시 이동
-    if (newCompany) {
-      await companyStore.selectCompany(newCompany.id)
-      await router.push(`/app/${newCompany.id}/dashboard`)
+    if (newCompany && newCompany.id) {
+      try {
+        await navigateTo(`/app/${newCompany.id}/dashboard`)
+      } catch (navErr: any) {
+        errorMsg.value = '대시보드 이동 중 오류가 발생했습니다: ' + navErr.message
+      }
+    } else {
+      errorMsg.value = '회사 정보 응답에 오류가 있습니다.'
     }
+  } catch (err: any) {
+    errorMsg.value = '알 수 없는 오류가 발생했습니다: ' + err.message
   } finally {
     loading.value = false
   }

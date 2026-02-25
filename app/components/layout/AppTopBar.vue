@@ -1,10 +1,8 @@
 <template>
   <header class="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-    <div class="flex h-14 items-center px-4 lg:px-6">
-      <!-- Logo -->
-      <NuxtLink to="/" class="mr-4 flex items-center gap-2 font-bold text-lg">
-  <div class="flex h-16 items-center justify-between px-4 sm:px-6 w-full">
-    <!-- Left: Brand / Company Switcher -->
+    <!-- Header inner container -->
+    <div class="flex h-14 items-center justify-between px-4 sm:px-6 w-full">
+      <!-- Left: Brand / Company Switcher -->
     <div class="flex items-center gap-6">
       <NuxtLink to="/" class="flex items-center gap-2 group">
         <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold shadow-sm group-hover:bg-primary/90 transition-colors">
@@ -71,7 +69,8 @@
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  </div>
+    </div>
+  </header>
 </template>
 
 <script setup lang="ts">

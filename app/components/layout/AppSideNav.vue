@@ -1,9 +1,7 @@
 <template>
   <aside class="hidden lg:flex w-60 flex-col border-r border-border bg-card min-h-[calc(100vh-3.5rem)]">
-    <nav class="flex-1 space-y-1 px-3 py-4">
-      <!-- EMPLOYEE 기본 메뉴 -->
-  <div class="flex h-full flex-col py-6">
-    <div class="px-6 mb-4">
+    <div class="flex h-full flex-col py-6">
+      <div class="px-6 mb-4">
       <h2 class="text-xs font-bold uppercase tracking-wider text-muted-foreground/70 mb-2">메뉴</h2>
     </div>
     
@@ -41,6 +39,7 @@
       </div>
     </nav>
   </div>
+  </aside>
 </template>
 
 <script setup lang="ts">
